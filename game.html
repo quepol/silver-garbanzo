@@ -1,0 +1,1056 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>NOVA</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; display: flex; justify-content: center;
+           align-items: center; height: 100vh; overflow: hidden; }
+    canvas { display: block; image-rendering: pixelated; cursor: none; }
+  </style>
+</head>
+<body>
+  <canvas id="nova"></canvas>
+  <script>
+  // ============================================================
+  // SECTION 1: CONSTANTS & CONFIG
+  // ============================================================
+  const SCREEN_W   = 800;
+  const SCREEN_H   = 600;
+  const HALF_H     = SCREEN_H / 2;
+  const FOV        = Math.PI / 3;
+  const HALF_FOV   = FOV / 2;
+  const NUM_RAYS   = SCREEN_W;
+  const MAX_DEPTH  = 20;
+  const MOVE_SPEED = 0.05;
+  const ROT_SPEED  = 0.03;
+  const PROJ_DIST  = SCREEN_W / (2 * Math.tan(HALF_FOV));
+
+  const MAP_W = 20, MAP_H = 20;
+  const TILE_OPEN = 0, TILE_HULL = 1, TILE_INNER = 2, TILE_EXIT = 3;
+
+  const COL = {
+    ceiling:    '#000008',
+    floorDark:  '#060610',
+    hullWall:   '#1a0a2e',
+    innerWall:  '#0d1a3a',
+    exitDoor:   '#0d2e1a',
+    chipGold:   '#ffd700',
+    plasma:     '#00aaff',
+    plasmaCore: '#ffffff',
+    hudText:    '#aaccff',
+    hudBlue:    '#00aaff',
+    crosshair:  'rgba(0,255,136,0.8)',
+  };
+
+  // ============================================================
+  // SECTION 2: MAP DATA (20x20)
+  // 0=open, 1=hull wall, 2=inner wall, 3=exit door
+  // ============================================================
+  const MAP = [
+    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+    [1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,1],
+    [1,0,1,1,0,0,1,0,1,1,1,0,0,1,1,1,0,0,0,1],
+    [1,0,1,0,0,0,0,0,0,0,1,0,0,0,0,1,0,1,0,1],
+    [1,0,1,0,1,1,1,0,1,0,1,0,1,1,0,1,0,1,0,1],
+    [1,0,0,0,1,0,0,0,1,0,0,0,1,0,0,0,0,1,0,1],
+    [1,0,1,0,1,0,1,1,1,1,1,0,1,0,1,1,0,1,0,1],
+    [1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,1],
+    [1,0,1,1,1,0,1,0,1,1,1,0,1,0,1,1,0,1,0,1],
+    [1,0,0,0,1,0,1,0,1,0,0,0,1,0,0,0,0,1,0,1],
+    [1,0,1,0,1,0,0,0,0,0,1,0,0,0,1,0,0,0,0,1],
+    [1,0,1,0,2,2,2,0,2,2,2,0,2,2,2,0,1,0,1,1],
+    [1,0,0,0,2,0,0,0,0,0,0,0,0,0,2,0,0,0,0,1],
+    [1,0,1,0,2,0,2,2,2,0,2,2,2,0,2,0,1,0,0,1],
+    [1,0,1,0,0,0,2,0,0,0,0,0,2,0,0,0,1,0,1,1],
+    [1,0,0,0,1,0,2,0,1,1,1,0,2,0,1,0,0,0,0,1],
+    [1,0,1,1,1,0,2,0,1,0,1,0,2,0,1,1,0,1,0,1],
+    [1,0,0,0,0,0,2,0,0,0,0,0,2,0,0,0,0,0,0,1],
+    [1,0,1,0,0,0,2,2,2,0,0,2,2,2,0,0,1,0,0,1],
+    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,3,1],
+  ];
+
+  // ============================================================
+  // SECTION 3: STATE MACHINE
+  // ============================================================
+  const STATE = { TITLE: 'title', PLAYING: 'playing', WIN: 'win', DEAD: 'dead' };
+  let gameState = STATE.TITLE;
+  let chipsAtDeath = 0;
+
+  function setState(s) {
+    gameState = s;
+    if (s === STATE.PLAYING) initGame();
+  }
+
+  // ============================================================
+  // SECTION 4: GAME WORLD OBJECTS
+  // ============================================================
+  const player = {
+    x: 1.5, y: 1.5, angle: 0,
+    health: 100, maxHealth: 100,
+    ammo: 30, maxAmmo: 30,
+    ammoRegenTimer: 0, ammoRegenRate: 30,
+    chipsCollected: 0, alive: true,
+  };
+
+  function makeEnemy(type, x, y) {
+    return {
+      type, x, y,
+      health: type === 'alien' ? 2 : 3,
+      maxHealth: type === 'alien' ? 2 : 3,
+      state: 'idle',
+      alertRange: type === 'alien' ? 7 : 9,
+      attackRange: 0.9,
+      attackTimer: 0,
+      attackCooldown: type === 'alien' ? 90 : 120,
+      moveSpeed: type === 'alien' ? 0.022 : 0.011,
+      teleportTimer: 0,
+      teleportCooldown: 280,
+      flickerFrame: 0,
+      alive: true,
+      dist: 0,
+    };
+  }
+
+  function makeProjectile(x, y, dx, dy) {
+    return { x, y, dx, dy, speed: 0.2, alive: true, trail: [] };
+  }
+
+  function makeChip(x, y) {
+    return { x, y, collected: false, pulseT: Math.random() * Math.PI * 2 };
+  }
+
+  function makeParticle(x, y, dx, dy, life, color) {
+    return { x, y, dx, dy, life, maxLife: life, color, alive: true };
+  }
+
+  let enemies = [], chips = [], projectiles = [], particles = [];
+  let damageFlash = 0;
+  let fireCooldown = 0;
+
+  // Stars for ceiling (generated once)
+  const STARS = Array.from({ length: 120 }, () => ({
+    x: Math.random() * SCREEN_W,
+    y: Math.random() * HALF_H,
+    r: Math.random(),
+    brightness: 0.3 + Math.random() * 0.7,
+  }));
+
+  // ============================================================
+  // SECTION 5: INPUT HANDLER
+  // ============================================================
+  const keys = {};
+
+  window.addEventListener('keydown', e => {
+    keys[e.code] = true;
+    if (e.code === 'Enter') {
+      if (gameState === STATE.TITLE) setState(STATE.PLAYING);
+      else if (gameState === STATE.WIN || gameState === STATE.DEAD) setState(STATE.TITLE);
+    }
+    if (e.code === 'KeyR' && gameState === STATE.DEAD) setState(STATE.TITLE);
+    if ((e.code === 'Space') && gameState === STATE.PLAYING) fireWeapon();
+    if (['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) {
+      e.preventDefault();
+    }
+  });
+  window.addEventListener('keyup', e => { keys[e.code] = false; });
+
+  // ============================================================
+  // SECTION 6: RAYCASTER (DDA ALGORITHM)
+  // ============================================================
+  const zBuffer = new Float32Array(SCREEN_W);
+  let dirX = 1, dirY = 0, planeX = 0, planeY = Math.tan(HALF_FOV);
+
+  function computeCamera() {
+    dirX   =  Math.cos(player.angle);
+    dirY   =  Math.sin(player.angle);
+    planeX = -dirY * Math.tan(HALF_FOV);
+    planeY =  dirX * Math.tan(HALF_FOV);
+  }
+
+  function getWallColor(tileType, dist, side) {
+    let r, g, b;
+    if (tileType === TILE_HULL)       { r = 80;  g = 20;  b = 130; }
+    else if (tileType === TILE_INNER) { r = 20;  g = 50;  b = 150; }
+    else if (tileType === TILE_EXIT)  { r = 20;  g = 140; b = 70;  }
+    else                              { r = 80;  g = 20;  b = 130; }
+
+    const bright = Math.max(0.08, 1 - dist / MAX_DEPTH);
+    const sideDim = side === 1 ? 0.55 : 1.0;
+    return `rgb(${Math.floor(r*bright*sideDim)},${Math.floor(g*bright*sideDim)},${Math.floor(b*bright*sideDim)})`;
+  }
+
+  function castRays() {
+    zBuffer.fill(Infinity);
+    for (let col = 0; col < SCREEN_W; col++) {
+      const camX = (2 * col / SCREEN_W) - 1;
+      const rayDirX = dirX + planeX * camX;
+      const rayDirY = dirY + planeY * camX;
+
+      let mapX = Math.floor(player.x);
+      let mapY = Math.floor(player.y);
+
+      const deltaDistX = rayDirX === 0 ? Infinity : Math.abs(1 / rayDirX);
+      const deltaDistY = rayDirY === 0 ? Infinity : Math.abs(1 / rayDirY);
+
+      let stepX, stepY, sideDistX, sideDistY;
+      if (rayDirX < 0) { stepX = -1; sideDistX = (player.x - mapX) * deltaDistX; }
+      else             { stepX =  1; sideDistX = (mapX + 1 - player.x) * deltaDistX; }
+      if (rayDirY < 0) { stepY = -1; sideDistY = (player.y - mapY) * deltaDistY; }
+      else             { stepY =  1; sideDistY = (mapY + 1 - player.y) * deltaDistY; }
+
+      let hit = false, side = 0;
+      let safety = 0;
+      while (!hit && safety++ < 60) {
+        if (sideDistX < sideDistY) { sideDistX += deltaDistX; mapX += stepX; side = 0; }
+        else                        { sideDistY += deltaDistY; mapY += stepY; side = 1; }
+        if (mapX >= 0 && mapY >= 0 && mapX < MAP_W && mapY < MAP_H && MAP[mapY][mapX] > 0) hit = true;
+      }
+      if (!hit) continue;
+
+      const perpWallDist = side === 0
+        ? (mapX - player.x + (1 - stepX) / 2) / rayDirX
+        : (mapY - player.y + (1 - stepY) / 2) / rayDirY;
+
+      if (perpWallDist <= 0) continue;
+      zBuffer[col] = perpWallDist;
+
+      const lineH = Math.floor(PROJ_DIST / perpWallDist);
+      const drawStart = Math.max(0, Math.floor(HALF_H - lineH / 2));
+      const drawEnd   = Math.min(SCREEN_H - 1, Math.floor(HALF_H + lineH / 2));
+
+      ctx.fillStyle = getWallColor(MAP[mapY][mapX], perpWallDist, side);
+      ctx.fillRect(col, drawStart, 1, drawEnd - drawStart);
+    }
+  }
+
+  // ============================================================
+  // SECTION 7: SPRITE SYSTEM (BILLBOARD RENDERING)
+  // ============================================================
+  function projectSprite(sx, sy) {
+    const spriteX = sx - player.x;
+    const spriteY = sy - player.y;
+    const invDet = 1.0 / (planeX * dirY - dirX * planeY);
+    const transformX = invDet * ( dirY * spriteX - dirX * spriteY);
+    const transformY = invDet * (-planeY * spriteX + planeX * spriteY);
+    if (transformY <= 0.05) return null;
+
+    const screenX = Math.floor(SCREEN_W / 2 * (1 + transformX / transformY));
+    const spriteH = Math.max(1, Math.abs(Math.floor(PROJ_DIST / transformY)));
+    const spriteW = spriteH;
+
+    return {
+      screenX, spriteW, spriteH,
+      drawStartX: Math.max(0, screenX - Math.floor(spriteW / 2)),
+      drawEndX:   Math.min(SCREEN_W - 1, screenX + Math.floor(spriteW / 2)),
+      drawStartY: Math.max(0, Math.floor(HALF_H - spriteH / 2)),
+      depth: transformY,
+    };
+  }
+
+  function renderSpriteBillboard(offscreenCanvas, proj) {
+    if (!proj) return;
+    const srcW = offscreenCanvas.width;
+    const srcH = offscreenCanvas.height;
+    for (let col = proj.drawStartX; col <= proj.drawEndX; col++) {
+      if (proj.depth >= zBuffer[col]) continue;
+      const srcX = Math.floor((col - (proj.screenX - proj.spriteW / 2)) / proj.spriteW * srcW);
+      if (srcX < 0 || srcX >= srcW) continue;
+      ctx.drawImage(offscreenCanvas, srcX, 0, 1, srcH, col, proj.drawStartY, 1, proj.spriteH);
+    }
+  }
+
+  function renderAllSprites() {
+    // Build sprite list: enemies + chips
+    const spriteList = [];
+
+    enemies.filter(e => e.alive).forEach(e => {
+      const proj = projectSprite(e.x, e.y);
+      if (proj) spriteList.push({ type: 'enemy', obj: e, proj });
+    });
+
+    chips.filter(c => !c.collected).forEach(c => {
+      const proj = projectSprite(c.x, c.y);
+      if (proj) spriteList.push({ type: 'chip', obj: c, proj });
+    });
+
+    // Sort back to front
+    spriteList.sort((a, b) => b.proj.depth - a.proj.depth);
+
+    spriteList.forEach(s => {
+      if (s.type === 'enemy') {
+        const e = s.obj;
+        if (e.type === 'alien') {
+          renderAlienSprite(e, s.proj);
+        } else {
+          renderShadowSprite(e, s.proj);
+        }
+      } else {
+        renderChipSprite(s.obj, s.proj);
+      }
+    });
+
+    // Projectiles
+    projectiles.forEach(p => {
+      const proj = projectSprite(p.x, p.y);
+      if (!proj) return;
+      const cy = (proj.drawStartY + proj.drawStartY + proj.spriteH) / 2;
+      const sz = Math.max(3, Math.floor(6 / proj.depth));
+      ctx.save();
+      ctx.shadowColor = COL.plasma;
+      ctx.shadowBlur = sz * 4;
+      ctx.fillStyle = COL.plasmaCore;
+      ctx.beginPath();
+      ctx.arc(proj.screenX, cy, sz, 0, Math.PI * 2);
+      ctx.fill();
+      // Trail
+      p.trail.forEach((tp, i) => {
+        const tp2 = projectSprite(tp.x, tp.y);
+        if (!tp2) return;
+        ctx.globalAlpha = 0.3 - i * 0.1;
+        ctx.fillStyle = COL.plasma;
+        ctx.beginPath();
+        ctx.arc(tp2.screenX, cy, Math.max(1, sz - i), 0, Math.PI * 2);
+        ctx.fill();
+      });
+      ctx.globalAlpha = 1;
+      ctx.restore();
+    });
+  }
+
+  // ============================================================
+  // SECTION 8: ENEMY AI
+  // ============================================================
+  function isWall(wx, wy) {
+    const mx = Math.floor(wx), my = Math.floor(wy);
+    if (mx < 0 || my < 0 || mx >= MAP_W || my >= MAP_H) return true;
+    return MAP[my][mx] > 0;
+  }
+
+  function isWallRadius(wx, wy, r) {
+    return isWall(wx - r, wy) || isWall(wx + r, wy) ||
+           isWall(wx, wy - r) || isWall(wx, wy + r);
+  }
+
+  function teleportEnemy(enemy) {
+    for (let i = 0; i < 30; i++) {
+      const tx = player.x + (Math.random() * 8 - 4);
+      const ty = player.y + (Math.random() * 8 - 4);
+      const dx = tx - player.x, dy = ty - player.y;
+      if (Math.sqrt(dx*dx + dy*dy) < 2) continue;
+      if (!isWallRadius(tx, ty, 0.3)) { enemy.x = tx; enemy.y = ty; return; }
+    }
+  }
+
+  function updateEnemies() {
+    enemies.forEach(enemy => {
+      if (!enemy.alive) return;
+      const dx = player.x - enemy.x;
+      const dy = player.y - enemy.y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      enemy.dist = dist;
+
+      if (dist < enemy.alertRange) enemy.state = 'chase';
+      else if (enemy.state !== 'attack') enemy.state = 'idle';
+
+      if (enemy.state === 'chase') {
+        const nx = dx / dist, ny = dy / dist;
+        const nx2 = enemy.x + nx * enemy.moveSpeed;
+        const ny2 = enemy.y + ny * enemy.moveSpeed;
+        if (!isWallRadius(nx2, enemy.y, 0.3)) enemy.x = nx2;
+        if (!isWallRadius(enemy.x, ny2, 0.3)) enemy.y = ny2;
+
+        if (enemy.type === 'shadow') {
+          enemy.teleportTimer++;
+          if (enemy.teleportTimer >= enemy.teleportCooldown) {
+            enemy.teleportTimer = 0;
+            teleportEnemy(enemy);
+          }
+        }
+      }
+
+      enemy.flickerFrame = (enemy.flickerFrame + 1) % 8;
+
+      // Attack
+      if (dist < enemy.attackRange) {
+        enemy.attackTimer++;
+        if (enemy.attackTimer >= enemy.attackCooldown) {
+          enemy.attackTimer = 0;
+          damagePlayer(enemy.type === 'alien' ? 10 : 15);
+        }
+      } else {
+        enemy.attackTimer = 0;
+      }
+    });
+  }
+
+  function hitEnemy(enemy) {
+    enemy.health--;
+    playSound('hit');
+    spawnParticles(enemy.x, enemy.y, enemy.type === 'alien' ? '#0066ff' : '#9900cc', 6);
+    if (enemy.health <= 0) {
+      enemy.alive = false;
+      spawnParticles(enemy.x, enemy.y, enemy.type === 'alien' ? '#00aaff' : '#cc00ff', 12);
+    }
+  }
+
+  // ============================================================
+  // SECTION 9: PHYSICS & COLLISION
+  // ============================================================
+  const PLAYER_RADIUS = 0.28;
+
+  function damagePlayer(amount) {
+    player.health = Math.max(0, player.health - amount);
+    damageFlash = 1.0;
+    playSound('damage');
+    if (player.health <= 0 && player.alive) {
+      player.alive = false;
+      chipsAtDeath = player.chipsCollected;
+      playSound('death');
+      setTimeout(() => setState(STATE.DEAD), 1200);
+    }
+  }
+
+  function updatePlayer() {
+    if (!player.alive) return;
+
+    if (keys['KeyA'] || keys['ArrowLeft'])  player.angle -= ROT_SPEED;
+    if (keys['KeyD'] || keys['ArrowRight']) player.angle += ROT_SPEED;
+
+    let mx = 0, my = 0;
+    if (keys['KeyW'] || keys['ArrowUp'])   { mx +=  Math.cos(player.angle); my +=  Math.sin(player.angle); }
+    if (keys['KeyS'] || keys['ArrowDown']) { mx += -Math.cos(player.angle); my += -Math.sin(player.angle); }
+
+    if (mx !== 0 || my !== 0) {
+      const len = Math.sqrt(mx*mx + my*my);
+      mx /= len; my /= len;
+      const nx = player.x + mx * MOVE_SPEED;
+      const ny = player.y + my * MOVE_SPEED;
+      if (!isWallRadius(nx, player.y, PLAYER_RADIUS)) player.x = nx;
+      if (!isWallRadius(player.x, ny, PLAYER_RADIUS)) player.y = ny;
+    }
+
+    // Ammo regen
+    player.ammoRegenTimer++;
+    if (player.ammoRegenTimer >= player.ammoRegenRate && player.ammo < player.maxAmmo) {
+      player.ammoRegenTimer = 0;
+      player.ammo++;
+    }
+
+    // Chip collection
+    chips.forEach(chip => {
+      if (chip.collected) return;
+      chip.pulseT += 0.05;
+      const dx = player.x - chip.x, dy = player.y - chip.y;
+      if (Math.sqrt(dx*dx + dy*dy) < 0.6) {
+        chip.collected = true;
+        player.chipsCollected++;
+        playSound('chip');
+        spawnParticles(chip.x, chip.y, '#ffd700', 10);
+      }
+    });
+
+    // Exit check
+    if (MAP[Math.floor(player.y)][Math.floor(player.x)] === TILE_EXIT && player.chipsCollected >= 5) {
+      setState(STATE.WIN);
+    }
+  }
+
+  function spawnParticles(x, y, color, count) {
+    for (let i = 0; i < count; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const spd = 0.02 + Math.random() * 0.04;
+      particles.push(makeParticle(x, y, Math.cos(ang)*spd, Math.sin(ang)*spd, 20 + Math.random()*20, color));
+    }
+  }
+
+  function updateParticles() {
+    particles.forEach(p => {
+      p.x += p.dx; p.y += p.dy;
+      p.life--;
+      if (p.life <= 0) p.alive = false;
+    });
+    particles = particles.filter(p => p.alive);
+  }
+
+  function renderParticles() {
+    particles.forEach(p => {
+      const proj = projectSprite(p.x, p.y);
+      if (!proj) return;
+      const alpha = p.life / p.maxLife;
+      const sz = Math.max(1, Math.floor(3 / proj.depth));
+      const cy = proj.drawStartY + proj.spriteH / 2;
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = p.color;
+      ctx.fillRect(proj.screenX - sz/2, cy - sz/2, sz, sz);
+    });
+    ctx.globalAlpha = 1;
+  }
+
+  // ============================================================
+  // SECTION 10: WEAPON SYSTEM
+  // ============================================================
+  function fireWeapon() {
+    if (fireCooldown > 0 || player.ammo <= 0 || !player.alive) return;
+    player.ammo--;
+    fireCooldown = 12;
+    const spread = (Math.random() - 0.5) * 0.03;
+    const ang = player.angle + spread;
+    projectiles.push(makeProjectile(player.x, player.y, Math.cos(ang), Math.sin(ang)));
+    playSound('plasma');
+  }
+
+  function updateProjectiles() {
+    projectiles.forEach(p => {
+      p.trail.unshift({ x: p.x, y: p.y });
+      if (p.trail.length > 3) p.trail.pop();
+      p.x += p.dx * p.speed;
+      p.y += p.dy * p.speed;
+
+      if (isWall(p.x, p.y)) {
+        p.alive = false;
+        spawnParticles(p.x, p.y, COL.plasma, 4);
+        return;
+      }
+
+      enemies.forEach(enemy => {
+        if (!enemy.alive || !p.alive) return;
+        const ddx = p.x - enemy.x, ddy = p.y - enemy.y;
+        if (Math.sqrt(ddx*ddx + ddy*ddy) < 0.45) {
+          p.alive = false;
+          hitEnemy(enemy);
+        }
+      });
+    });
+    projectiles = projectiles.filter(p => p.alive);
+  }
+
+  // ============================================================
+  // SECTION 11: WORLD RENDERING (CEILING + FLOOR + WALLS)
+  // ============================================================
+  function drawCeiling() {
+    ctx.fillStyle = COL.ceiling;
+    ctx.fillRect(0, 0, SCREEN_W, HALF_H);
+    const t = Date.now() / 1000;
+    STARS.forEach(star => {
+      const twinkle = 0.4 + 0.6 * Math.abs(Math.sin(t * 1.2 + star.r * 12));
+      ctx.globalAlpha = twinkle * star.brightness;
+      ctx.fillStyle = '#ffffff';
+      const sz = star.brightness > 0.7 ? 2 : 1;
+      ctx.fillRect(star.x, star.y, sz, sz);
+    });
+    ctx.globalAlpha = 1;
+  }
+
+  function drawFloor() {
+    ctx.fillStyle = COL.floorDark;
+    ctx.fillRect(0, HALF_H, SCREEN_W, HALF_H);
+    ctx.strokeStyle = 'rgba(0, 80, 140, 0.2)';
+    ctx.lineWidth = 1;
+    // Horizontal grid lines
+    for (let i = 1; i <= 8; i++) {
+      const y = HALF_H + (SCREEN_H - HALF_H) * (i / 8);
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(SCREEN_W, y); ctx.stroke();
+    }
+    // Converging vertical lines
+    for (let i = 0; i <= 12; i++) {
+      const bx = (i / 12) * SCREEN_W;
+      ctx.beginPath(); ctx.moveTo(SCREEN_W / 2, HALF_H); ctx.lineTo(bx, SCREEN_H); ctx.stroke();
+    }
+  }
+
+  // ============================================================
+  // SECTION 12: SPRITE DRAWING FUNCTIONS (PROCEDURAL)
+  // ============================================================
+
+  // Off-screen canvases
+  const alienOC  = document.createElement('canvas');
+  const shadowOC = document.createElement('canvas');
+  const chipOC   = document.createElement('canvas');
+
+  function drawAlienToCanvas(oc, size, alert) {
+    oc.width = oc.height = size;
+    const c = oc.getContext('2d');
+    c.clearRect(0, 0, size, size);
+    const cx = size / 2, cy = size * 0.55;
+
+    // Body
+    c.fillStyle = '#00008b';
+    c.beginPath();
+    c.ellipse(cx, cy, size*0.28, size*0.32, 0, 0, Math.PI*2);
+    c.fill();
+
+    // Head
+    c.fillStyle = '#0000bb';
+    c.beginPath();
+    c.ellipse(cx, cy - size*0.28, size*0.18, size*0.2, 0, 0, Math.PI*2);
+    c.fill();
+
+    // Eyes
+    c.fillStyle = alert ? '#00ffff' : '#009999';
+    c.shadowColor = alert ? '#00ffff' : 'transparent';
+    c.shadowBlur = alert ? 6 : 0;
+    c.beginPath(); c.arc(cx - size*0.07, cy - size*0.3, size*0.05, 0, Math.PI*2); c.fill();
+    c.beginPath(); c.arc(cx + size*0.07, cy - size*0.3, size*0.05, 0, Math.PI*2); c.fill();
+    c.shadowBlur = 0;
+
+    // Tentacles
+    c.strokeStyle = '#000088';
+    c.lineWidth = size * 0.035;
+    c.lineCap = 'round';
+    for (let i = -1; i <= 1; i++) {
+      c.beginPath();
+      c.moveTo(cx + i * size*0.1, cy + size*0.28);
+      c.bezierCurveTo(cx + i*size*0.25, cy + size*0.38, cx + i*size*0.15, cy + size*0.48, cx + i*size*0.28, cy + size*0.54);
+      c.stroke();
+    }
+  }
+
+  function drawShadowToCanvas(oc, size, flickerFrame) {
+    oc.width = oc.height = size;
+    const c = oc.getContext('2d');
+    c.clearRect(0, 0, size, size);
+    const cx = size/2, cy = size/2;
+    c.globalAlpha = flickerFrame % 2 === 0 ? 0.95 : 0.55;
+
+    // Wispy body
+    c.fillStyle = '#2d0057';
+    c.beginPath();
+    c.moveTo(cx, cy - size*0.38);
+    c.bezierCurveTo(cx+size*0.3, cy-size*0.2, cx+size*0.35, cy+size*0.1, cx+size*0.12, cy+size*0.38);
+    c.bezierCurveTo(cx, cy+size*0.48, cx-size*0.12, cy+size*0.38, cx-size*0.35, cy+size*0.1);
+    c.bezierCurveTo(cx-size*0.3, cy-size*0.2, cx, cy-size*0.38, cx, cy-size*0.38);
+    c.fill();
+
+    // Glow
+    const grad = c.createRadialGradient(cx, cy, size*0.05, cx, cy, size*0.42);
+    grad.addColorStop(0, 'rgba(120,0,220,0.35)');
+    grad.addColorStop(1, 'rgba(45,0,87,0)');
+    c.fillStyle = grad;
+    c.fillRect(0, 0, size, size);
+
+    // Eyes
+    c.fillStyle = '#cc00ff';
+    c.shadowColor = '#cc00ff';
+    c.shadowBlur = 10;
+    c.beginPath(); c.arc(cx - size*0.1, cy - size*0.08, size*0.065, 0, Math.PI*2); c.fill();
+    c.beginPath(); c.arc(cx + size*0.1, cy - size*0.08, size*0.065, 0, Math.PI*2); c.fill();
+    c.shadowBlur = 0;
+    c.globalAlpha = 1;
+  }
+
+  function drawChipToCanvas(oc, size, pulseT) {
+    oc.width = oc.height = size;
+    const c = oc.getContext('2d');
+    c.clearRect(0, 0, size, size);
+    const cx = size/2, cy = size/2;
+    const pulse = 0.78 + 0.22 * Math.sin(pulseT);
+
+    // Outer glow
+    const grad = c.createRadialGradient(cx, cy, 0, cx, cy, size*0.48);
+    grad.addColorStop(0, `rgba(255,215,0,${0.7*pulse})`);
+    grad.addColorStop(1, 'rgba(255,150,0,0)');
+    c.fillStyle = grad;
+    c.fillRect(0, 0, size, size);
+
+    // Diamond
+    const hs = size * 0.26 * pulse;
+    c.fillStyle = '#ffd700';
+    c.beginPath();
+    c.moveTo(cx, cy - hs); c.lineTo(cx + hs, cy);
+    c.lineTo(cx, cy + hs); c.lineTo(cx - hs, cy);
+    c.closePath(); c.fill();
+
+    // Core highlight
+    c.fillStyle = 'rgba(255,255,210,0.92)';
+    const cs = hs * 0.38;
+    c.beginPath();
+    c.moveTo(cx, cy - cs); c.lineTo(cx + cs, cy);
+    c.lineTo(cx, cy + cs); c.lineTo(cx - cs, cy);
+    c.closePath(); c.fill();
+  }
+
+  function renderAlienSprite(enemy, proj) {
+    drawAlienToCanvas(alienOC, 128, enemy.state === 'chase');
+    renderSpriteBillboard(alienOC, proj);
+  }
+
+  function renderShadowSprite(enemy, proj) {
+    drawShadowToCanvas(shadowOC, 128, enemy.flickerFrame);
+    renderSpriteBillboard(shadowOC, proj);
+  }
+
+  function renderChipSprite(chip, proj) {
+    drawChipToCanvas(chipOC, 64, chip.pulseT);
+    renderSpriteBillboard(chipOC, proj);
+  }
+
+  // ============================================================
+  // SECTION 13: HUD RENDERING
+  // ============================================================
+  function drawHUD() {
+    drawHealthBar();
+    drawAmmoBar();
+    drawCrewCounter();
+    drawMinimap();
+    drawCrosshair();
+  }
+
+  function drawHealthBar() {
+    const x = 16, y = SCREEN_H - 44, w = 160, h = 16;
+    const pct = player.health / player.maxHealth;
+    ctx.fillStyle = 'rgba(0,0,0,0.65)';
+    ctx.fillRect(x - 2, y - 16, w + 4, h + 20);
+    const r = pct < 0.5 ? 255 : Math.floor(255 * (1 - pct) * 2);
+    const g = pct > 0.5 ? 200 : Math.floor(200 * pct * 2);
+    ctx.fillStyle = `rgb(${r},${g},0)`;
+    ctx.fillRect(x, y, Math.floor(w * pct), h);
+    ctx.fillStyle = COL.hudText;
+    ctx.font = '11px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(`HULL  ${player.health}%`, x, y - 4);
+  }
+
+  function drawAmmoBar() {
+    const x = SCREEN_W - 176, y = SCREEN_H - 44, w = 160, h = 16;
+    ctx.fillStyle = 'rgba(0,0,0,0.65)';
+    ctx.fillRect(x - 2, y - 16, w + 4, h + 20);
+    const pipW = Math.floor((w - player.maxAmmo + 1) / player.maxAmmo);
+    for (let i = 0; i < player.maxAmmo; i++) {
+      ctx.fillStyle = i < player.ammo ? COL.hudBlue : 'rgba(0,40,80,0.6)';
+      ctx.fillRect(x + i * (pipW + 1), y, pipW, h);
+    }
+    ctx.fillStyle = COL.hudText;
+    ctx.font = '11px monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText('PLASMA', x + w, y - 4);
+    ctx.textAlign = 'left';
+  }
+
+  function drawCrewCounter() {
+    const text = `CREW DATA: ${player.chipsCollected}/5`;
+    ctx.font = 'bold 14px monospace';
+    ctx.textAlign = 'center';
+    const done = player.chipsCollected >= 5;
+    ctx.shadowColor = done ? '#ffd700' : COL.hudBlue;
+    ctx.shadowBlur = 12;
+    ctx.fillStyle = done ? '#ffd700' : COL.hudText;
+    ctx.fillText(text, SCREEN_W / 2, 26);
+    ctx.shadowBlur = 0;
+    ctx.textAlign = 'left';
+  }
+
+  function drawMinimap() {
+    const MM_SCALE = 6;
+    const MM_SIZE  = MAP_W * MM_SCALE;
+    const MM_X     = SCREEN_W - MM_SIZE - 8;
+    const MM_Y     = 36;
+
+    ctx.fillStyle = 'rgba(0,0,0,0.72)';
+    ctx.fillRect(MM_X, MM_Y, MM_SIZE, MM_SIZE);
+
+    for (let ry = 0; ry < MAP_H; ry++) {
+      for (let rx = 0; rx < MAP_W; rx++) {
+        const t = MAP[ry][rx];
+        if (t === 0) continue;
+        ctx.fillStyle = t === TILE_HULL ? '#2a0850' : t === TILE_INNER ? '#0a2850' : '#0a5028';
+        ctx.fillRect(MM_X + rx*MM_SCALE, MM_Y + ry*MM_SCALE, MM_SCALE, MM_SCALE);
+      }
+    }
+
+    chips.filter(c => !c.collected).forEach(c => {
+      ctx.fillStyle = '#ffd700';
+      ctx.fillRect(MM_X + c.x*MM_SCALE - 1, MM_Y + c.y*MM_SCALE - 1, 3, 3);
+    });
+
+    enemies.filter(e => e.alive).forEach(e => {
+      ctx.fillStyle = e.type === 'alien' ? '#0055ff' : '#aa00ff';
+      ctx.fillRect(MM_X + e.x*MM_SCALE - 2, MM_Y + e.y*MM_SCALE - 2, 4, 4);
+    });
+
+    const px = MM_X + player.x * MM_SCALE;
+    const py = MM_Y + player.y * MM_SCALE;
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(player.angle);
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.moveTo(5, 0); ctx.lineTo(-3, -3); ctx.lineTo(-3, 3); ctx.closePath(); ctx.fill();
+    ctx.restore();
+
+    ctx.strokeStyle = 'rgba(80,120,220,0.4)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(MM_X, MM_Y, MM_SIZE, MM_SIZE);
+  }
+
+  function drawCrosshair() {
+    const cx = SCREEN_W / 2, cy = HALF_H;
+    const gap = 6, len = 12;
+    ctx.strokeStyle = COL.crosshair;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(cx - gap - len, cy); ctx.lineTo(cx - gap, cy);
+    ctx.moveTo(cx + gap, cy);       ctx.lineTo(cx + gap + len, cy);
+    ctx.moveTo(cx, cy - gap - len); ctx.lineTo(cx, cy - gap);
+    ctx.moveTo(cx, cy + gap);       ctx.lineTo(cx, cy + gap + len);
+    ctx.stroke();
+    ctx.fillStyle = COL.crosshair;
+    ctx.beginPath(); ctx.arc(cx, cy, 2, 0, Math.PI*2); ctx.fill();
+  }
+
+  // ============================================================
+  // SECTION 14: SCREEN RENDERING (TITLE / WIN / DEAD)
+  // ============================================================
+  function drawTitleScreen() {
+    const t = Date.now() / 1000;
+    ctx.fillStyle = '#000010';
+    ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
+
+    STARS.forEach(star => {
+      ctx.globalAlpha = 0.25 + 0.75 * Math.abs(Math.sin(t + star.r * 15));
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(star.x, star.y * (SCREEN_H / HALF_H) * 0.85, 1, 1);
+    });
+    ctx.globalAlpha = 1;
+
+    // NOVA title
+    ctx.save();
+    ctx.font = 'bold 96px monospace';
+    ctx.textAlign = 'center';
+    ctx.shadowColor = '#6600ff';
+    ctx.shadowBlur = 35 + 12 * Math.sin(t * 2.1);
+    ctx.fillStyle = '#cc88ff';
+    ctx.fillText('NOVA', SCREEN_W/2, 130);
+    ctx.shadowBlur = 0;
+    ctx.restore();
+
+    ctx.font = '17px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#7788bb';
+    ctx.fillText('A SPACE EXPLORATION MISSION', SCREEN_W/2, 165);
+
+    const story = [
+      'Commander NOVA, the station has been boarded.',
+      'The crew\'s data chips are scattered throughout',
+      'the corridors by alien intruders.',
+      '',
+      'Recover all 5 CREW DATA CHIPS, then reach',
+      'the EXIT DOOR to transmit the data and escape.',
+      '',
+      'Controls:  W/A/S/D or arrow keys to move',
+      '           SPACE or click to fire plasma blaster',
+    ];
+    ctx.font = '13px monospace';
+    ctx.fillStyle = '#556688';
+    story.forEach((line, i) => ctx.fillText(line, SCREEN_W/2, 210 + i*22));
+
+    if (Math.floor(t * 2) % 2 === 0) {
+      ctx.font = 'bold 16px monospace';
+      ctx.fillStyle = '#00ff88';
+      ctx.shadowColor = '#00ff88';
+      ctx.shadowBlur = 8;
+      ctx.fillText('PRESS ENTER TO BEGIN MISSION', SCREEN_W/2, SCREEN_H - 50);
+      ctx.shadowBlur = 0;
+    }
+    ctx.textAlign = 'left';
+  }
+
+  function drawWinScreen() {
+    ctx.fillStyle = 'rgba(0,0,20,0.88)';
+    ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
+    ctx.textAlign = 'center';
+
+    ctx.font = 'bold 60px monospace';
+    ctx.shadowColor = '#00ff88';
+    ctx.shadowBlur = 30;
+    ctx.fillStyle = '#00ff88';
+    ctx.fillText('MISSION COMPLETE', SCREEN_W/2, SCREEN_H/2 - 70);
+    ctx.shadowBlur = 0;
+
+    ctx.font = '20px monospace';
+    ctx.fillStyle = '#aaccff';
+    ctx.fillText('All 5 crew data chips recovered!', SCREEN_W/2, SCREEN_H/2 - 10);
+    ctx.fillText('The crew data has been transmitted.', SCREEN_W/2, SCREEN_H/2 + 26);
+    ctx.fillText('The station is safe. Well done, NOVA.', SCREEN_W/2, SCREEN_H/2 + 62);
+
+    ctx.font = '14px monospace';
+    ctx.fillStyle = '#557799';
+    ctx.fillText('PRESS ENTER to return to title', SCREEN_W/2, SCREEN_H/2 + 120);
+    ctx.textAlign = 'left';
+  }
+
+  function drawDeadScreen() {
+    ctx.fillStyle = 'rgba(30,0,0,0.88)';
+    ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
+    ctx.textAlign = 'center';
+
+    ctx.font = 'bold 60px monospace';
+    ctx.shadowColor = '#ff2244';
+    ctx.shadowBlur = 30;
+    ctx.fillStyle = '#ff2244';
+    ctx.fillText('NOVA OFFLINE', SCREEN_W/2, SCREEN_H/2 - 70);
+    ctx.shadowBlur = 0;
+
+    ctx.font = '18px monospace';
+    ctx.fillStyle = '#aa5566';
+    ctx.fillText(`Chips recovered: ${chipsAtDeath} / 5`, SCREEN_W/2, SCREEN_H/2 - 10);
+    ctx.fillText('NOVA has been destroyed.', SCREEN_W/2, SCREEN_H/2 + 26);
+
+    ctx.font = '14px monospace';
+    ctx.fillStyle = '#664455';
+    ctx.fillText('PRESS ENTER or R to restart', SCREEN_W/2, SCREEN_H/2 + 90);
+    ctx.textAlign = 'left';
+  }
+
+  // ============================================================
+  // SECTION 15: AUDIO (WEB AUDIO API - NO FILES)
+  // ============================================================
+  let audioCtx = null;
+
+  function getAudio() {
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    return audioCtx;
+  }
+
+  function playSound(type) {
+    try {
+      const ac = getAudio();
+      const osc  = ac.createOscillator();
+      const gain = ac.createGain();
+      osc.connect(gain);
+      gain.connect(ac.destination);
+      const now = ac.currentTime;
+
+      if (type === 'plasma') {
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(700, now);
+        osc.frequency.exponentialRampToValueAtTime(180, now + 0.14);
+        gain.gain.setValueAtTime(0.12, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+        osc.start(now); osc.stop(now + 0.14);
+      } else if (type === 'hit') {
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(220, now);
+        osc.frequency.exponentialRampToValueAtTime(80, now + 0.08);
+        gain.gain.setValueAtTime(0.15, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+        osc.start(now); osc.stop(now + 0.08);
+      } else if (type === 'chip') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(600, now);
+        osc.frequency.setValueAtTime(900, now + 0.1);
+        osc.frequency.setValueAtTime(1200, now + 0.2);
+        gain.gain.setValueAtTime(0.18, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.36);
+        osc.start(now); osc.stop(now + 0.36);
+      } else if (type === 'damage') {
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(120, now);
+        gain.gain.setValueAtTime(0.25, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+        osc.start(now); osc.stop(now + 0.18);
+      } else if (type === 'death') {
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(280, now);
+        osc.frequency.exponentialRampToValueAtTime(28, now + 1.0);
+        gain.gain.setValueAtTime(0.35, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 1.0);
+        osc.start(now); osc.stop(now + 1.0);
+      }
+    } catch (e) { /* audio unavailable */ }
+  }
+
+  // ============================================================
+  // SECTION 16: GAME LOOP
+  // ============================================================
+  let lastTime = 0;
+
+  function gameLoop(timestamp) {
+    const dt = Math.min((timestamp - lastTime) / 16.67, 3);
+    lastTime = timestamp;
+
+    ctx.clearRect(0, 0, SCREEN_W, SCREEN_H);
+
+    if (gameState === STATE.TITLE) {
+      drawTitleScreen();
+    } else if (gameState === STATE.PLAYING) {
+      updatePlayer();
+      updateEnemies();
+      updateProjectiles();
+      updateParticles();
+      if (fireCooldown > 0) fireCooldown--;
+
+      computeCamera();
+
+      drawCeiling();
+      drawFloor();
+      castRays();
+      renderAllSprites();
+      renderParticles();
+      drawHUD();
+
+      if (damageFlash > 0) {
+        ctx.fillStyle = `rgba(255,0,0,${damageFlash * 0.28})`;
+        ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
+        damageFlash = Math.max(0, damageFlash - 0.06);
+      }
+    } else if (gameState === STATE.WIN) {
+      drawWinScreen();
+    } else if (gameState === STATE.DEAD) {
+      drawDeadScreen();
+    }
+
+    requestAnimationFrame(gameLoop);
+  }
+
+  // ============================================================
+  // SECTION 17: INIT & BOOTSTRAP
+  // ============================================================
+  function initGame() {
+    Object.assign(player, {
+      x: 1.5, y: 1.5, angle: 0,
+      health: 100, ammo: 30, chipsCollected: 0,
+      ammoRegenTimer: 0, alive: true,
+    });
+
+    enemies = [
+      makeEnemy('alien',  5.5,  3.5),
+      makeEnemy('alien',  13.5, 5.5),
+      makeEnemy('shadow', 9.5,  9.5),
+      makeEnemy('alien',  3.5,  14.5),
+      makeEnemy('shadow', 15.5, 14.5),
+      makeEnemy('alien',  7.5,  16.5),
+      makeEnemy('shadow', 17.5, 3.5),
+    ];
+
+    chips = [
+      makeChip(3.5,  1.5),
+      makeChip(9.5,  3.5),
+      makeChip(17.5, 7.5),
+      makeChip(9.5,  12.5),
+      makeChip(1.5,  17.5),
+    ];
+
+    projectiles = [];
+    particles   = [];
+    damageFlash = 0;
+    fireCooldown = 0;
+  }
+
+  // Bootstrap
+  const canvas = document.getElementById('nova');
+  canvas.width  = SCREEN_W;
+  canvas.height = SCREEN_H;
+  const ctx = canvas.getContext('2d');
+
+  canvas.addEventListener('click', () => {
+    if (gameState === STATE.PLAYING) fireWeapon();
+  });
+
+  requestAnimationFrame(gameLoop);
+  </script>
+</body>
+</html>
