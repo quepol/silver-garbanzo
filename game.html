@@ -24,7 +24,7 @@
   const NUM_RAYS   = SCREEN_W;
   const MAX_DEPTH  = 20;
   const MOVE_SPEED = 0.05;
-  const ROT_SPEED  = 0.03;
+  const ROT_SPEED  = 0.06;
   const PROJ_DIST  = SCREEN_W / (2 * Math.tan(HALF_FOV));
 
   const MAP_W = 20, MAP_H = 20;
@@ -128,6 +128,8 @@
   let enemies = [], chips = [], projectiles = [], particles = [];
   let damageFlash = 0;
   let fireCooldown = 0;
+  let enemyRespawnTimer = 0;
+  let exitMessage = '', exitMessageTimer = 0;
 
   // Stars for ceiling (generated once)
   const STARS = Array.from({ length: 120 }, () => ({
@@ -183,6 +185,7 @@
 
   function castRays() {
     zBuffer.fill(Infinity);
+    let exitColMin = Infinity, exitColMax = -Infinity, exitTop = 0, exitBot = SCREEN_H;
     for (let col = 0; col < SCREEN_W; col++) {
       const camX = (2 * col / SCREEN_W) - 1;
       const rayDirX = dirX + planeX * camX;
@@ -222,6 +225,22 @@
 
       ctx.fillStyle = getWallColor(MAP[mapY][mapX], perpWallDist, side);
       ctx.fillRect(col, drawStart, 1, drawEnd - drawStart);
+      if (MAP[mapY][mapX] === TILE_EXIT) {
+        if (col < exitColMin) { exitColMin = col; exitTop = drawStart; exitBot = drawEnd; }
+        exitColMax = col;
+      }
+    }
+    if (exitColMin <= exitColMax) {
+      const cx = (exitColMin + exitColMax) / 2;
+      const cy = (exitTop + exitBot) / 2 - 10;
+      ctx.save();
+      ctx.font = `bold ${Math.max(10, Math.floor((exitColMax - exitColMin) / 2))}px monospace`;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#00ff88';
+      ctx.shadowColor = '#00ff88';
+      ctx.shadowBlur = 8;
+      ctx.fillText('EXIT', cx, cy);
+      ctx.restore();
     }
   }
 
@@ -382,6 +401,14 @@
       } else {
         enemy.attackTimer = 0;
       }
+
+      // Contact damage — player ran through enemy
+      if (dist < 0.5) {
+        enemy.contactTimer = (enemy.contactTimer || 0) + 1;
+        if (enemy.contactTimer >= 20) { enemy.contactTimer = 0; damagePlayer(10); }
+      } else {
+        enemy.contactTimer = 0;
+      }
     });
   }
 
@@ -452,8 +479,14 @@
     });
 
     // Exit check
-    if (MAP[Math.floor(player.y)][Math.floor(player.x)] === TILE_EXIT && player.chipsCollected >= 5) {
+    const exitDx = player.x - 18.5, exitDy = player.y - 19.0;
+    const exitDist = Math.sqrt(exitDx*exitDx + exitDy*exitDy);
+    if (exitDist < 0.8 && player.chipsCollected >= 5) {
       setState(STATE.WIN);
+    } else if (exitDist < 0.8 && player.chipsCollected < 5 && exitMessageTimer <= 0) {
+      const need = 5 - player.chipsCollected;
+      exitMessage = `NEED ${need} MORE CREW DATA CHIP${need > 1 ? 'S' : ''}`;
+      exitMessageTimer = 180;
     }
   }
 
@@ -695,6 +728,20 @@
     drawCrewCounter();
     drawMinimap();
     drawCrosshair();
+    if (exitMessageTimer > 0) {
+      const alpha = Math.min(1, exitMessageTimer / 30);
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.font = 'bold 20px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#ff4444';
+      ctx.shadowColor = '#ff2200';
+      ctx.shadowBlur = 16;
+      ctx.fillText(exitMessage, SCREEN_W / 2, SCREEN_H / 2 + 90);
+      ctx.shadowBlur = 0;
+      ctx.restore();
+      exitMessageTimer--;
+    }
   }
 
   function drawHealthBar() {
@@ -837,8 +884,9 @@
       'Recover all 5 CREW DATA CHIPS, then reach',
       'the EXIT DOOR to transmit the data and escape.',
       '',
-      'Controls:  W/A/S/D or arrow keys to move',
-      '           SPACE or click to fire plasma blaster',
+      'Controls:',
+      'W/A/S/D or arrow keys to move',
+      'SPACE or click to fire plasma blaster',
     ];
     ctx.font = '13px monospace';
     ctx.fillStyle = '#556688';
@@ -979,6 +1027,10 @@
     } else if (gameState === STATE.PLAYING) {
       updatePlayer();
       updateEnemies();
+      if (enemies.length > 0 && enemies.every(e => !e.alive)) {
+        enemyRespawnTimer++;
+        if (enemyRespawnTimer >= 300) { spawnEnemies(); enemyRespawnTimer = 0; }
+      }
       updateProjectiles();
       updateParticles();
       if (fireCooldown > 0) fireCooldown--;
@@ -1016,15 +1068,8 @@
       ammoRegenTimer: 0, alive: true,
     });
 
-    enemies = [
-      makeEnemy('alien',  5.5,  3.5),
-      makeEnemy('alien',  13.5, 5.5),
-      makeEnemy('shadow', 9.5,  9.5),
-      makeEnemy('alien',  3.5,  14.5),
-      makeEnemy('shadow', 15.5, 14.5),
-      makeEnemy('alien',  7.5,  16.5),
-      makeEnemy('shadow', 17.5, 3.5),
-    ];
+    spawnEnemies();
+    enemyRespawnTimer = 0;
 
     chips = [
       makeChip(3.5,  1.5),
@@ -1038,6 +1083,19 @@
     particles   = [];
     damageFlash = 0;
     fireCooldown = 0;
+    exitMessageTimer = 0;
+  }
+
+  function spawnEnemies() {
+    enemies = [
+      makeEnemy('alien',  5.5,  3.5),
+      makeEnemy('alien',  13.5, 5.5),
+      makeEnemy('shadow', 9.5,  9.5),
+      makeEnemy('alien',  3.5,  14.5),
+      makeEnemy('shadow', 15.5, 14.5),
+      makeEnemy('alien',  7.5,  16.5),
+      makeEnemy('shadow', 17.5, 3.5),
+    ];
   }
 
   // Bootstrap
