@@ -48,27 +48,115 @@
   // SECTION 2: MAP DATA (20x20)
   // 0=open, 1=hull wall, 2=inner wall, 3=exit door
   // ============================================================
-  const MAP = [
-    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-    [1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,1],
-    [1,0,1,1,0,0,1,0,1,1,1,0,0,1,1,1,0,0,0,1],
-    [1,0,1,0,0,0,0,0,0,0,1,0,0,0,0,1,0,1,0,1],
-    [1,0,1,0,1,1,1,0,1,0,1,0,1,1,0,1,0,1,0,1],
-    [1,0,0,0,1,0,0,0,1,0,0,0,1,0,0,0,0,1,0,1],
-    [1,0,1,0,1,0,1,1,1,1,1,0,1,0,1,1,0,1,0,1],
-    [1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,1],
-    [1,0,1,1,1,0,1,0,1,1,1,0,1,0,1,1,0,1,0,1],
-    [1,0,0,0,1,0,1,0,1,0,0,0,1,0,0,0,0,1,0,1],
-    [1,0,1,0,1,0,0,0,0,0,1,0,0,0,1,0,0,0,0,1],
-    [1,0,1,0,2,2,2,0,2,2,2,0,2,2,2,0,1,0,1,1],
-    [1,0,0,0,2,0,0,0,0,0,0,0,0,0,2,0,0,0,0,1],
-    [1,0,1,0,2,0,2,2,2,0,2,2,2,0,2,0,1,0,0,1],
-    [1,0,1,0,0,0,2,0,0,0,0,0,2,0,0,0,1,0,1,1],
-    [1,0,0,0,1,0,2,0,1,1,1,0,2,0,1,0,0,0,0,1],
-    [1,0,1,1,1,0,2,0,1,0,1,0,2,0,1,1,0,1,0,1],
-    [1,0,0,0,0,0,2,0,0,0,0,0,2,0,0,0,0,0,0,1],
-    [1,0,1,0,0,0,2,2,2,0,0,2,2,2,0,0,1,0,0,1],
-    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,3,1],
+  const MAPS = [
+    {
+      layout: [
+        [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+        [1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,1],
+        [1,0,1,1,0,0,1,0,1,1,1,0,0,1,1,1,0,0,0,1],
+        [1,0,1,0,0,0,0,0,0,0,1,0,0,0,0,1,0,1,0,1],
+        [1,0,1,0,1,1,1,0,1,0,1,0,1,1,0,1,0,1,0,1],
+        [1,0,0,0,1,0,0,0,1,0,0,0,1,0,0,0,0,1,0,1],
+        [1,0,1,0,1,0,1,1,1,1,1,0,1,0,1,1,0,1,0,1],
+        [1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,1],
+        [1,0,1,1,1,0,1,0,1,1,1,0,1,0,1,1,0,1,0,1],
+        [1,0,0,0,1,0,1,0,1,0,0,0,1,0,0,0,0,1,0,1],
+        [1,0,1,0,1,0,0,0,0,0,1,0,0,0,1,0,0,0,0,1],
+        [1,0,1,0,2,2,2,0,2,2,2,0,2,2,2,0,1,0,1,1],
+        [1,0,0,0,2,0,0,0,0,0,0,0,0,0,2,0,0,0,0,1],
+        [1,0,1,0,2,0,2,2,2,0,2,2,2,0,2,0,1,0,0,1],
+        [1,0,1,0,0,0,2,0,0,0,0,0,2,0,0,0,1,0,1,1],
+        [1,0,0,0,1,0,2,0,1,1,1,0,2,0,1,0,0,0,0,1],
+        [1,0,1,1,1,0,2,0,1,0,1,0,2,0,1,1,0,1,0,1],
+        [1,0,0,0,0,0,2,0,0,0,0,0,2,0,0,0,0,0,0,1],
+        [1,0,1,0,0,0,2,2,2,0,0,2,2,2,0,0,1,0,0,1],
+        [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,3,1],
+      ],
+      playerStart: [1.5, 1.5],
+      exitPos:     [18.5, 19.0],
+      chips:   [[3.5,1.5],[9.5,3.5],[17.5,7.5],[9.5,12.5],[1.5,17.5]],
+      enemies: [
+        {type:'alien',  x:5.5,  y:3.5},
+        {type:'alien',  x:13.5, y:5.5},
+        {type:'shadow', x:9.5,  y:9.5},
+        {type:'alien',  x:3.5,  y:14.5},
+        {type:'shadow', x:15.5, y:14.5},
+        {type:'alien',  x:7.5,  y:16.5},
+        {type:'shadow', x:17.5, y:3.5},
+      ],
+    },
+    {
+      layout: [
+        [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+        [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+        [1,0,1,1,1,0,1,1,1,0,1,1,1,0,1,1,1,1,0,1],
+        [1,0,1,0,1,0,1,0,1,0,1,0,1,0,0,0,0,1,0,1],
+        [1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,1,0,1,0,1],
+        [1,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,1],
+        [1,0,1,1,1,0,1,1,1,0,1,1,1,0,1,0,1,1,0,1],
+        [1,0,1,0,1,0,1,0,1,0,1,0,1,0,0,0,0,1,0,1],
+        [1,0,1,0,0,0,0,0,1,0,1,0,0,0,1,0,0,0,0,1],
+        [1,0,0,0,1,0,0,0,0,0,0,0,1,0,1,0,1,0,0,1],
+        [1,0,1,0,1,0,1,1,1,0,1,1,1,0,1,0,1,0,0,3],
+        [1,0,1,0,0,0,1,0,0,0,1,0,0,0,0,0,0,0,0,1],
+        [1,0,0,0,1,0,1,0,1,0,1,0,1,1,0,1,0,1,0,1],
+        [1,0,1,0,1,0,0,0,1,0,0,0,1,0,0,1,0,1,0,1],
+        [1,0,1,1,1,0,1,1,1,0,1,0,1,0,1,1,0,1,0,1],
+        [1,0,0,0,0,0,1,0,0,0,1,0,0,0,1,0,0,0,0,1],
+        [1,1,0,1,0,0,1,0,1,0,0,0,1,0,1,0,1,1,0,1],
+        [1,0,0,1,0,0,0,0,1,0,1,0,1,0,0,0,0,0,0,1],
+        [1,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,1,0,0,1],
+        [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+      ],
+      playerStart: [1.5, 1.5],
+      exitPos:     [19.0, 10.5],
+      chips:   [[3.5,1.5],[1.5,9.5],[9.5,4.5],[17.5,5.5],[1.5,17.5]],
+      enemies: [
+        {type:'alien',  x:5.5,  y:3.5},
+        {type:'alien',  x:13.5, y:7.5},
+        {type:'shadow', x:9.5,  y:9.5},
+        {type:'alien',  x:3.5,  y:11.5},
+        {type:'shadow', x:11.5, y:13.5},
+        {type:'alien',  x:5.5,  y:17.5},
+        {type:'shadow', x:15.5, y:15.5},
+      ],
+    },
+    {
+      layout: [
+        [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+        [1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,1],
+        [1,0,1,0,1,1,0,0,1,0,1,1,0,0,1,1,0,1,0,1],
+        [1,0,1,0,0,0,0,0,0,0,0,1,0,0,0,0,0,1,0,1],
+        [1,0,1,1,1,0,1,0,1,1,0,1,0,1,1,0,0,0,0,1],
+        [1,0,0,0,1,0,1,0,0,0,0,1,0,0,1,0,1,0,0,1],
+        [1,1,0,0,1,0,0,0,1,0,0,0,0,0,1,0,1,0,1,1],
+        [1,0,0,1,0,0,1,0,1,2,2,2,0,0,0,0,0,0,0,1],
+        [1,0,1,1,0,0,1,0,0,2,0,2,0,0,1,1,0,1,0,1],
+        [1,0,0,0,0,0,1,0,0,2,0,2,0,0,0,1,0,1,0,1],
+        [1,0,1,0,1,1,1,0,0,2,2,2,0,1,0,1,0,0,0,1],
+        [1,0,1,0,0,0,0,0,0,0,0,0,0,1,0,0,0,1,0,1],
+        [1,0,0,0,1,0,1,1,0,1,0,1,1,1,0,1,0,0,0,1],
+        [1,1,0,1,1,0,0,0,0,1,0,0,0,0,0,1,0,1,0,1],
+        [1,0,0,0,0,0,1,0,1,1,0,1,0,0,0,0,0,1,0,1],
+        [1,0,1,1,0,0,1,0,0,0,0,1,0,1,1,0,0,0,0,1],
+        [1,0,0,0,0,0,0,0,1,0,0,0,0,1,0,0,1,0,1,1],
+        [1,0,1,0,1,1,0,0,1,0,1,1,0,0,0,0,1,0,0,1],
+        [1,0,1,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,1],
+        [1,1,1,1,1,1,1,1,1,1,3,1,1,1,1,1,1,1,1,1],
+      ],
+      playerStart: [1.5, 1.5],
+      exitPos:     [10.5, 19.0],
+      chips:   [[3.5,1.5],[17.5,1.5],[14.5,7.5],[2.5,14.5],[13.5,18.5]],
+      enemies: [
+        {type:'alien',  x:5.5,  y:3.5},
+        {type:'alien',  x:15.5, y:1.5},
+        {type:'shadow', x:4.5,  y:8.5},
+        {type:'alien',  x:16.5, y:10.5},
+        {type:'shadow', x:7.5,  y:13.5},
+        {type:'alien',  x:3.5,  y:16.5},
+        {type:'shadow', x:15.5, y:16.5},
+      ],
+    },
   ];
 
   // ============================================================
@@ -90,7 +178,7 @@
     x: 1.5, y: 1.5, angle: 0,
     health: 100, maxHealth: 100,
     ammo: 30, maxAmmo: 30,
-    ammoRegenTimer: 0, ammoRegenRate: 30,
+    ammoRegenTimer: 0, ammoRegenRate: 90,
     chipsCollected: 0, alive: true,
   };
 
@@ -130,6 +218,8 @@
   let fireCooldown = 0;
   let enemyRespawnTimer = 0;
   let exitMessage = '', exitMessageTimer = 0;
+  let minimapVisible = true;
+  let currentMap = null;
 
   // Stars for ceiling (generated once)
   const STARS = Array.from({ length: 120 }, () => ({
@@ -151,6 +241,7 @@
       else if (gameState === STATE.WIN || gameState === STATE.DEAD) setState(STATE.TITLE);
     }
     if (e.code === 'KeyR' && gameState === STATE.DEAD) setState(STATE.TITLE);
+    if (e.code === 'KeyM' && gameState === STATE.PLAYING) minimapVisible = !minimapVisible;
     if ((e.code === 'Space') && gameState === STATE.PLAYING) fireWeapon();
     if (['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) {
       e.preventDefault();
@@ -208,7 +299,7 @@
       while (!hit && safety++ < 60) {
         if (sideDistX < sideDistY) { sideDistX += deltaDistX; mapX += stepX; side = 0; }
         else                        { sideDistY += deltaDistY; mapY += stepY; side = 1; }
-        if (mapX >= 0 && mapY >= 0 && mapX < MAP_W && mapY < MAP_H && MAP[mapY][mapX] > 0) hit = true;
+        if (mapX >= 0 && mapY >= 0 && mapX < MAP_W && mapY < MAP_H && currentMap.layout[mapY][mapX] > 0) hit = true;
       }
       if (!hit) continue;
 
@@ -223,9 +314,9 @@
       const drawStart = Math.max(0, Math.floor(HALF_H - lineH / 2));
       const drawEnd   = Math.min(SCREEN_H - 1, Math.floor(HALF_H + lineH / 2));
 
-      ctx.fillStyle = getWallColor(MAP[mapY][mapX], perpWallDist, side);
+      ctx.fillStyle = getWallColor(currentMap.layout[mapY][mapX], perpWallDist, side);
       ctx.fillRect(col, drawStart, 1, drawEnd - drawStart);
-      if (MAP[mapY][mapX] === TILE_EXIT) {
+      if (currentMap.layout[mapY][mapX] === TILE_EXIT) {
         if (col < exitColMin) { exitColMin = col; exitTop = drawStart; exitBot = drawEnd; }
         exitColMax = col;
       }
@@ -344,7 +435,7 @@
   function isWall(wx, wy) {
     const mx = Math.floor(wx), my = Math.floor(wy);
     if (mx < 0 || my < 0 || mx >= MAP_W || my >= MAP_H) return true;
-    return MAP[my][mx] > 0;
+    return currentMap.layout[my][mx] > 0;
   }
 
   function isWallRadius(wx, wy, r) {
@@ -479,7 +570,7 @@
     });
 
     // Exit check
-    const exitDx = player.x - 18.5, exitDy = player.y - 19.0;
+    const exitDx = player.x - currentMap.exitPos[0], exitDy = player.y - currentMap.exitPos[1];
     const exitDist = Math.sqrt(exitDx*exitDx + exitDy*exitDy);
     if (exitDist < 0.8 && player.chipsCollected >= 5) {
       setState(STATE.WIN);
@@ -726,7 +817,7 @@
     drawHealthBar();
     drawAmmoBar();
     drawCrewCounter();
-    drawMinimap();
+    if (minimapVisible) drawMinimap();
     drawCrosshair();
     if (exitMessageTimer > 0) {
       const alpha = Math.min(1, exitMessageTimer / 30);
@@ -799,7 +890,7 @@
 
     for (let ry = 0; ry < MAP_H; ry++) {
       for (let rx = 0; rx < MAP_W; rx++) {
-        const t = MAP[ry][rx];
+        const t = currentMap.layout[ry][rx];
         if (t === 0) continue;
         ctx.fillStyle = t === TILE_HULL ? '#2a0850' : t === TILE_INNER ? '#0a2850' : '#0a5028';
         ctx.fillRect(MM_X + rx*MM_SCALE, MM_Y + ry*MM_SCALE, MM_SCALE, MM_SCALE);
@@ -1062,8 +1153,10 @@
   // SECTION 17: INIT & BOOTSTRAP
   // ============================================================
   function initGame() {
+    currentMap = MAPS[Math.floor(Math.random() * MAPS.length)];
+
     Object.assign(player, {
-      x: 1.5, y: 1.5, angle: 0,
+      x: currentMap.playerStart[0], y: currentMap.playerStart[1], angle: 0,
       health: 100, ammo: 30, chipsCollected: 0,
       ammoRegenTimer: 0, alive: true,
     });
@@ -1071,31 +1164,18 @@
     spawnEnemies();
     enemyRespawnTimer = 0;
 
-    chips = [
-      makeChip(3.5,  1.5),
-      makeChip(9.5,  3.5),
-      makeChip(17.5, 7.5),
-      makeChip(9.5,  12.5),
-      makeChip(1.5,  17.5),
-    ];
+    chips = currentMap.chips.map(([x, y]) => makeChip(x, y));
 
     projectiles = [];
     particles   = [];
     damageFlash = 0;
     fireCooldown = 0;
     exitMessageTimer = 0;
+    minimapVisible = true;
   }
 
   function spawnEnemies() {
-    enemies = [
-      makeEnemy('alien',  5.5,  3.5),
-      makeEnemy('alien',  13.5, 5.5),
-      makeEnemy('shadow', 9.5,  9.5),
-      makeEnemy('alien',  3.5,  14.5),
-      makeEnemy('shadow', 15.5, 14.5),
-      makeEnemy('alien',  7.5,  16.5),
-      makeEnemy('shadow', 17.5, 3.5),
-    ];
+    enemies = currentMap.enemies.map(e => makeEnemy(e.type, e.x, e.y));
   }
 
   // Bootstrap
