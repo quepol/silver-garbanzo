@@ -219,7 +219,7 @@
   let enemyRespawnTimer = 0;
   let exitMessage = '', exitMessageTimer = 0;
   let minimapVisible = true;
-  let currentMap = null;
+  let currentMap = MAPS[Math.floor(Math.random() * MAPS.length)];
 
   // Stars for ceiling (generated once)
   const STARS = Array.from({ length: 120 }, () => ({
@@ -1013,9 +1013,46 @@
     ctx.fillText('The crew data has been transmitted.', SCREEN_W/2, SCREEN_H/2 + 26);
     ctx.fillText('The station is safe. Well done, NOVA.', SCREEN_W/2, SCREEN_H/2 + 62);
 
+    const pct = player.health;
+    const rank      = pct === 100 ? 'S' : pct >= 75 ? 'A' : pct >= 50 ? 'B' : 'C';
+    const rankColor = pct === 100 ? '#ffd700' : pct >= 75 ? '#00ff88' : pct >= 50 ? '#aaccff' : '#ff6644';
+    const rankQuote = pct === 100
+      ? ['Flawless execution. Not a scratch on the hull.', 'Outstanding, NOVA.']
+      : pct >= 75
+      ? ['Minor hull damage sustained.', 'Mission accomplished. Well done, NOVA.']
+      : pct >= 50
+      ? ['Hull took significant damage.', "You made it out — barely. Don't push your luck."]
+      : ['Critical hull failure narrowly avoided.', 'Lucky to be alive, NOVA.'];
+
+    // Rank box
+    const boxW = 520, boxH = 118, boxX = SCREEN_W/2 - boxW/2, boxY = SCREEN_H/2 + 88;
+    ctx.fillStyle = 'rgba(0,0,30,0.75)';
+    ctx.fillRect(boxX, boxY, boxW, boxH);
+    ctx.strokeStyle = rankColor;
+    ctx.lineWidth = 1.5;
+    ctx.shadowColor = rankColor;
+    ctx.shadowBlur = 8;
+    ctx.strokeRect(boxX, boxY, boxW, boxH);
+    ctx.shadowBlur = 0;
+
+    ctx.font = 'bold 16px monospace';
+    ctx.fillStyle = '#aaccff';
+    ctx.fillText('HULL INTEGRITY RATING', SCREEN_W/2, boxY + 22);
+
+    ctx.font = 'bold 36px monospace';
+    ctx.shadowColor = rankColor;
+    ctx.shadowBlur = pct === 100 ? 24 : pct >= 75 ? 16 : 0;
+    ctx.fillStyle = rankColor;
+    ctx.fillText(`${rank} RANK  ·  ${pct}%`, SCREEN_W/2, boxY + 62);
+    ctx.shadowBlur = 0;
+
+    ctx.font = '13px monospace';
+    ctx.fillStyle = '#aaccff';
+    rankQuote.forEach((line, i) => ctx.fillText(line, SCREEN_W/2, boxY + 82 + i * 18));
+
     ctx.font = '14px monospace';
     ctx.fillStyle = '#557799';
-    ctx.fillText('PRESS ENTER to return to title', SCREEN_W/2, SCREEN_H/2 + 120);
+    ctx.fillText('PRESS ENTER to return to title', SCREEN_W/2, SCREEN_H/2 + 232);
     ctx.textAlign = 'left';
   }
 
